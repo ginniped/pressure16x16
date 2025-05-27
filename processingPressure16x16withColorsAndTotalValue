@@ -1,0 +1,240 @@
+/*
+ * Sensor orientation: corner 0,0
+ * Face up:
+ * 0 = top right
+ * 1 = bottom right
+ * 2 = bottom left
+ * 3 = top left
+ * Face down:
+ * 4 = top right
+ * 5 = bottom right
+ * 6 = bottom left
+ * 7 = top left
+ */
+
+int Orient = 0; // Variable to store the sensor orientation // Original value =3
+
+// Number of columns and rows in the grid
+int cols = 16;
+int rows = 16;
+
+// Window dimension (in pixels)
+int ScrDimX = 900; // Original value 800
+int ScrDimY = 900; // Original value 800
+
+// SQUARE dimension (in pixels)
+int SquareDimX = 800; // Original value 800
+int SquareDimY = 800; // Original value 800
+
+int PixDimX; // Pixel dimension in X direction
+int PixDimY; // Pixel dimension in Y direction
+int ScrDimMUX; // Maximum X dimension for screen
+int ScrDimMUY; // Maximum Y dimension for screen
+
+// Declare 2D array to store sensor data
+int[] myArray = new int[cols * rows];
+byte[] BuffArray = new byte[cols * rows];
+
+// Binary receive state
+int State; // -1 = waiting for 1st start pattern hAA
+// -2 = waiting for 2nd start pattern h55
+// -3 = waiting for 1st end pattern hF0
+// -4 = waiting for 2nd end pattern h0F
+// >0 = character to be received to fill the frame
+
+// Hexadecimal values for patterns
+int hAA = unhex("AA");
+int h55 = unhex("55");
+int hF0 = unhex("F0");
+int h0F = unhex("0F");
+
+int ArrIndex; // Index for the array
+boolean exitloop; // Flag to exit the loop
+int lastTime, now; // Timing variables
+
+int vCols; // Visual columns
+int vRows; // Visual rows
+
+import processing.serial.*;
+
+Serial myPort;
+
+int offsetX, offsetY;
+
+void setup() {
+  vRows=rows;
+  vCols=cols;
+
+  // Adjust screen size based on orientation
+  if (Orient == 0 || Orient == 2 || Orient == 5 || Orient == 7) {
+    //size(ScrDimX, ScrDimY);
+    surface.setSize(ScrDimX, ScrDimY);
+  } else {
+    // size(ScrDimY, ScrDimX);
+    surface.setSize(ScrDimY, ScrDimX);
+    //surface.setSize(ScrDimX, ScrDimY);
+  }
+  //dimensione dei singoli quadratini
+  PixDimX=SquareDimX/cols;
+  PixDimY=SquareDimY/rows;
+  ScrDimMUX=SquareDimX-PixDimX;
+  ScrDimMUY=SquareDimY-PixDimY;
+  
+  // Calcola offset per centrare la griglia
+  offsetX = (ScrDimX - SquareDimX) / 2;
+  offsetY = (ScrDimY - SquareDimY) / 2;
+
+  //**Troubleshooting Serial Connection (if needed)**
+  //List all the available serial ports and note the index of your arduino serial port
+  //println(Serial.list());
+
+  // If you have more than one serial port busy, it's possible that arduino is not the first serial port in the array.
+  //Change the index of the array from [0] to the needed one.
+  myPort = new Serial(this, Serial.list()[0], 38400); // Connect to the first available serial port at 38400 baud
+  // myPort = new Serial(this, Serial.list()[0], 115200); // Example alternative baud rate
+  // myPort = new Serial(this, Serial.list()[0], 9600); // Example alternative baud rate
+  // myPort = new Serial(this, Serial.list()[1], 57600); // Example connecting to a different serial port
+
+  State = -1; // Initial state: waiting for the first start pattern
+  ArrIndex = 0; // Initialize array index
+  exitloop = false; // Initialize exit loop flag
+}
+
+void draw() {
+  int inByte = 0;
+  int pressureValue;
+
+  exitloop = false;
+  while ((myPort.available() > 0) && !exitloop) {
+    if (State < 0) {
+      inByte = myPort.read();
+    }
+
+    if (State == -1) {
+      if (inByte == hAA) {
+        State = -2;
+      }
+    } else if (State == -2) {
+      if (inByte == h55) {
+        State = cols * rows;
+      }
+    } else if (State == -3) {
+      if (inByte == hF0) {
+        State = -4;
+      } else {
+        print("-");
+      }
+    } else if (State == -4) {
+      if (inByte == h0F){
+        exitloop = true;
+        now = millis();
+        lastTime = now;
+        State = -1;
+        ArrIndex = 0;
+
+        colorMode(HSB, 350, 300, 255);
+
+        String[] stringArray = new String[myArray.length];
+        String[] invertedArray = new String[myArray.length];
+        
+        for (int i = 0; i < myArray.length; i++) {
+          stringArray[i] = str(myArray[i]);
+          invertedArray[i] = str(255 - myArray[i]);
+        }
+
+        int total = 0;
+        for (int i = 0; i < invertedArray.length; i++) {
+          total += int(invertedArray[i]);
+        }
+
+        int offsetX = (ScrDimX - SquareDimX) / 2;
+        int offsetY = (ScrDimY - SquareDimY) / 2;
+
+        for (int i = 0; i < vRows; i++) {
+          for (int j = 0; j < vCols; j++) {
+            pressureValue = myArray[(i * vCols) + j];
+            if (pressureValue < 210) {
+              stroke(pressureValue, 300, 255);
+              fill(pressureValue, 300, 255);
+            } else {
+              stroke(pressureValue, 300 + ((210 - pressureValue) * 8), 255);
+              fill(pressureValue, 300 + ((210 - pressureValue) * 8), 255);
+            }
+
+            float x = 0;
+            float y = 0;
+
+            switch (Orient) {
+              case 0:
+                x = j * PixDimX;
+                y = ScrDimMUY - (i * PixDimY);
+                break;
+              case 1:
+                x = i * PixDimY;
+                y = j * PixDimX;
+                break;
+              case 2:
+                x = ScrDimMUX - (j * PixDimX);
+                y = i * PixDimY;
+                break;
+              case 3:
+                x = ScrDimMUY - (i * PixDimY);
+                y = ScrDimMUX - (j * PixDimX);
+                break;
+              case 4:
+                x = i * PixDimY;
+                y = ScrDimMUX - (j * PixDimX);
+                break;
+              case 5:
+                x = j * PixDimX;
+                y = i * PixDimY;
+                break;
+              case 6:
+                x = ScrDimMUY - (i * PixDimY);
+                y = j * PixDimX;
+                break;
+              case 7:
+                x = ScrDimMUX - (j * PixDimX);
+                y = ScrDimMUY - (i * PixDimY);
+                break;
+            }
+
+            x += offsetX;
+            y += offsetY;
+
+            rect(x, y, PixDimX, PixDimY);
+
+            fill(0);
+            textAlign(CENTER, CENTER);
+            float textX = x + PixDimX / 2;
+            float textY = y + PixDimY / 2;
+            text(pressureValue, textX, textY);
+          }
+        }
+
+        // Sfondo per il totale
+        fill(240);
+        noStroke();
+        rect(offsetX, offsetY + SquareDimY, SquareDimX, 40);
+
+        // Testo del totale
+        fill(0);
+        textAlign(CENTER, CENTER);
+        textSize(20);
+        text("Totale: " + total, offsetX + SquareDimX / 2, offsetY + SquareDimY + 20);
+      }
+    }
+
+    if (State > 0) {
+      if (myPort.available() >= State) {
+        myPort.readBytes(BuffArray);
+        for (int i = 0; i < State; i++) {
+          myArray[i] = int(BuffArray[i]);
+        }
+        State = -3;
+      } else {
+        exitloop = true;
+      }
+    }
+  }
+}
